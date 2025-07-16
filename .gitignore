@@ -1,0 +1,25 @@
+# Ignore all node_modules in any subfolder
+**/node_modules/
+
+# Ignore all Python cache files in any subfolder
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+
+# Ignore virtual environments
+**/env/
+**/venv/
+
+# Ignore environment variable files
+*.env
+**/.env
+
+# macOS
+.DS_Store
+
+# IDE/editor folders
+.vscode/
+.idea/
+
+**/data/tmp
