@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func
 from pydantic import BaseModel
 from dateutil.relativedelta import relativedelta
 from slowapi import Limiter
@@ -11,11 +11,13 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from fastapi.responses import PlainTextResponse
 import time
-from sqlalchemy import Table, MetaData, select, and_
+from sqlalchemy import Table, MetaData, select, and_, text
 import random
 from datetime import datetime
 from dotenv import load_dotenv
 import os
+from sqlalchemy import inspect
+
 
 # Create FastAPI app
 app = FastAPI()
@@ -26,6 +28,7 @@ app.state.limiter = limiter
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     return PlainTextResponse("Rate limit exceeded", status_code=429)
+
 
 
 # Enable CORS
@@ -49,6 +52,11 @@ engine = create_engine(DB_URL)
 metadata = MetaData()
 companies = Table("companies", metadata, autoload_with=engine)
 fundamentals = Table("fundamentals", metadata, autoload_with=engine)
+prices=Table("prices",metadata,autoload_with=engine)
+
+inspector = inspect(engine)
+tables = inspector.get_table_names()
+print("Tables in database:", tables)
 
 save_dir = "data/tmp"
 os.makedirs(save_dir, exist_ok=True)
@@ -61,9 +69,7 @@ async def ping():
 
 # Define input model for /echo POST body
 class EchoData(BaseModel):
-    # Define structure of expected JSON
-    # You can update this if your JSON has other fields
-    message: str = None  # Optional field, you can customize
+    message: str = None 
 
 class BacktestConfig(BaseModel):
     initial_capital: float
@@ -163,41 +169,50 @@ def safe_download(tickers, start, end, retries=3, delay=1):
 def run_backtest(request: Request,config: BacktestConfig):
     try:
         print(config)
+        start_year = pd.to_datetime(config.start_date).year
+        end_year = pd.to_datetime(config.end_date).year
         # Step 1: Fetch fundamentals based on user filters
-        stmt = (
-                select(
-                    companies.c.ticker,
-                    fundamentals.c.roce,
-                    fundamentals.c.pat,
-                    fundamentals.c.roe,
-                    fundamentals.c.pe,
-                    fundamentals.c.market_cap
-                )
-                .select_from(
-                    fundamentals.join(companies, fundamentals.c.company_id == companies.c.id)
-                )
-                .where(
-                    and_(
-                        fundamentals.c.roce >= config.roce,
-                        fundamentals.c.pat >= config.pat,
-                        fundamentals.c.market_cap.between(config.market_cap_min, config.market_cap_max)
-                    )
-                )
+        # Step 2: Subquery to get latest year for each company before or equal to start_year
+        latest_fundamentals_subq = (
+            select(
+                fundamentals.c.company_id,
+                func.max(fundamentals.c.year).label("max_year")
             )
-        
-        stmt2 = (
+            .where(fundamentals.c.year <= start_year)
+            .group_by(fundamentals.c.company_id)
+            .alias("latest_f")
+        )
+        stmt = (
             select(
                 companies.c.ticker,
+                fundamentals.c.company_id,
                 fundamentals.c.roce,
+                fundamentals.c.pat,
+                fundamentals.c.roe,
+                fundamentals.c.pe,
+                fundamentals.c.market_cap,
+                fundamentals.c.year
             )
-            .select_from(fundamentals.join(companies, fundamentals.c.company_id == companies.c.id))
-            .limit(5)
+            .select_from(
+                fundamentals
+                .join(latest_fundamentals_subq,
+                    and_(
+                        fundamentals.c.company_id == latest_fundamentals_subq.c.company_id,
+                        fundamentals.c.year == latest_fundamentals_subq.c.max_year
+                    ))
+                .join(companies, fundamentals.c.company_id == companies.c.id)
+            )
+            .where(
+                and_(
+                    fundamentals.c.roce >= config.roce,
+                    fundamentals.c.pat >= config.pat,
+                    fundamentals.c.market_cap.between(config.market_cap_min, config.market_cap_max)
+                )
+            )
         )
 
         with engine.connect() as conn:
-            # df = pd.read_sql(stmt2, conn)
-            # print("\n✅ Connected and fetched:")
-            # print(df.head())
+            
             fundamentals_df = pd.read_sql(stmt, conn)
             print("Query returned:", len(fundamentals_df), "rows")
 

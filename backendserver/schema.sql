@@ -3,19 +3,22 @@ CREATE TABLE companies (
   ticker TEXT UNIQUE NOT NULL
 );
 
-CREATE TABLE fundamentals (
+CREATE TABLE prices (
   id SERIAL PRIMARY KEY,
-  company_id INTEGER REFERENCES companies(id),
-  roce FLOAT,
-  pat FLOAT,
-  roe FLOAT,
-  pe FLOAT,
-  market_cap FLOAT,
-  date DATE
+  company_id INTEGER NOT NULL REFERENCES companies(id),
+  year INTEGER NOT NULL,
+  price REAL NOT NULL,
+  UNIQUE (company_id, year)
 );
 
-CREATE TABLE prices (
-  date DATE,
-  ticker TEXT,
-  close FLOAT
+CREATE TABLE fundamentals (
+  id SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id),
+  year INTEGER NOT NULL,
+  roe REAL,
+  roce REAL,
+  pat BIGINT,
+  pe REAL,
+  market_cap BIGINT,
+  UNIQUE (company_id, year)
 );

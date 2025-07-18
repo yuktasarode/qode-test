@@ -51,7 +51,7 @@ export default function Home() {
   const handleEcho = async () => {
   try {
     const res = await axios.post("http://localhost:8000/echo", {
-      name: "Yukta",
+      message: "Yukta",
     });
     setEchoResponse(JSON.stringify(res.data));
   } catch (err) {
