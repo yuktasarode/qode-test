@@ -76,7 +76,7 @@ export default function Home() {
     market_cap_max: 2000000,
     roce: 5,
     pat: 0,
-    ranking: 'roe:desc',
+    ranking: ['roe:desc'],
     compranking: 'yes'
   });
   const [result, setResult] = useState<BacktestResult | null>(null);
@@ -89,7 +89,7 @@ export default function Home() {
     'market_cap_min', 'market_cap_max',
     'roce', 'pat'
   ];
-  
+
   setConfig({
     ...config,
     [name]: numericFields.includes(name) ? Number(value) : value,
@@ -101,7 +101,10 @@ export default function Home() {
     setLoading(true);
     try {
       console.log(config)
-      const response = await axios.post('http://localhost:8000/run-backtest', config);
+      const response = await axios.post('http://localhost:8000/run-backtest', {
+        ...config,
+        ranking: config.ranking.join(",") 
+      });
       setResult(response.data);
       setRunId(response.data.run_id);
       console.log(response.data)
@@ -115,6 +118,14 @@ export default function Home() {
   const handleNifty=async()=>{
 
   }
+
+  const handleRankingChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const selectedOptions = Array.from(e.target.selectedOptions).map(option => option.value);
+  setConfig(prev => ({
+    ...prev,
+    ranking: selectedOptions
+  }));
+};
 
   const handleExport = async () => {
 
@@ -200,7 +211,7 @@ export default function Home() {
                 <p className="text-base mb-8 font-semibold text-center">Ranking</p>
                 <div className="grid grid-cols-2 gap-4">
                   <p>Criteria</p>
-                  <select name="ranking" value={config.ranking} onChange={handleChange} className="border p-2 bg-gray-800">
+                  <select name="ranking"  multiple value={Array.isArray(config.ranking) ? config.ranking : [config.ranking]} onChange={handleRankingChange} className="border p-2 bg-gray-800">
                     <option value="roe:desc">Roe desc</option>
                     <option value="roe:asc">Roe asc</option>
                     <option value="pe:desc">pe desc</option>
