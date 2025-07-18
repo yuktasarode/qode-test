@@ -37,30 +37,8 @@ type BacktestResult = {
 
 
 export default function Home() {
-  const [pingResponse, setPingResponse] = useState("");
-  const [echoResponse, setEchoResponse] = useState("");
   const [runId, setRunId] = useState<string | null>(null);
-
-
-  const handlePing = async () => {
-  try {
-    const res = await axios.get("http://localhost:8000/ping");
-    setPingResponse(JSON.stringify(res.data));
-  } catch (err) {
-    setPingResponse("Error contacting backend");
-  }
-};
-
-  const handleEcho = async () => {
-  try {
-    const res = await axios.post("http://localhost:8000/echo", {
-      message: "Yukta",
-    });
-    setEchoResponse(JSON.stringify(res.data));
-  } catch (err) {
-    setEchoResponse("Error contacting backend");
-  }
-};
+  const [niftyData, setNiftyData] = useState<{ date: string; value: number }[] | null>(null);
 
 
   // Real Code
@@ -116,6 +94,16 @@ export default function Home() {
   };
 
   const handleNifty=async()=>{
+    try {
+    const response = await axios.post("http://localhost:8000/compute-nifty", {
+      ...config,
+      ranking: config.ranking.join(","),
+    });
+    setNiftyData(response.data);
+  } catch (err) {
+    console.error(err);
+    alert("Error fetching Nifty50 data");
+  }
 
   }
 
@@ -260,7 +248,16 @@ export default function Home() {
                           data: result.equity_curve.map(d => d.value),
                           borderColor: 'rgb(75, 192, 192)',
                           tension: 0.1
-                        }
+                        },
+                        ...(niftyData
+                          ? [{
+                              label: 'Nifty50',
+                              data: niftyData.map(d => d.value),
+                              borderColor: 'rgb(255, 206, 86)',
+                              borderDash: [5, 5],
+                              tension: 0.1
+                            }]
+                          : [])
                       ]
                     }}
                     options={{ maintainAspectRatio: false, responsive: true }}

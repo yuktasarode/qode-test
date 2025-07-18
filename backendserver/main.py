@@ -445,3 +445,57 @@ def export_backtest(run_id: str):
     except Exception as e:
         print(e)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/compute-nifty")
+@limiter.limit("5/minute")
+def compute_nifty(request: Request, config: BacktestConfig):
+    try:
+        rebalance_dates = fetch_rebalance_dates(config.start_date, config.end_date, config)
+
+        print("Nifty50 Rebalance Dates:", rebalance_dates)
+        print(type(config.start_date), config.end_date)
+
+        data = yf.download("^NSEI", start=config.start_date, end=config.end_date)["Close"]
+        print(data.head())
+        if isinstance(data, pd.DataFrame):
+            data = data["^NSEI"] 
+
+        result = []
+
+        for date in rebalance_dates:
+            try:
+                # Exact match
+                if date in data.index:
+                    close_price = data.loc[date]
+                else:
+                    # Try previous available date
+                    past_data = data[data.index < date]
+                    if not past_data.empty:
+                        close_price = past_data.iloc[-1]
+                    else:
+                        # No past data, assign 0
+                        print(f"No previous data available for {date}, setting value to 0")
+                        close_price = 0
+
+                result.append({
+                    "date": date.strftime('%Y-%m-%d'),
+                    "value": round(close_price, 2) if isinstance(close_price, (int, float, np.number)) else 0
+                })
+
+                print(date,close_price)
+
+            except Exception as e:
+                print(f"Error on {date}: {e}")
+                result.append({
+                    "date": date.strftime('%Y-%m-%d'),
+                    "value": 0
+                })
+                continue
+
+        print(result)
+        return result
+
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=500, detail=str(e))
