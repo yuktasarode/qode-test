@@ -3,20 +3,20 @@ from fastapi.middleware.cors import CORSMiddleware
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from sqlalchemy import create_engine, func
+from sqlalchemy import create_engine, func, Table, MetaData, select, and_, text, inspect
 from pydantic import BaseModel
 from dateutil.relativedelta import relativedelta
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 import time
-from sqlalchemy import Table, MetaData, select, and_, text
 import random
 from datetime import datetime
 from dotenv import load_dotenv
 import os
-from sqlalchemy import inspect
+from io import BytesIO
+import zipfile
 
 
 # Create FastAPI app
@@ -119,7 +119,6 @@ async def echo(data: EchoData):
 
 
 
-
 def convert_dates_to_period(start: str, end: str) -> str:
     valid_periods = [
         ("1d", 1),
@@ -150,7 +149,7 @@ def safe_download(tickers, start, end, retries=3, delay=1):
             print("Fetching from Yahoo")
             
             period = convert_dates_to_period(start, end)
-            data = yf.download(tickers=tickers, period=period)["Close"]
+            data = yf.download(tickers=tickers, start=start, end=end)["Close"]
             filename = f"prices_{tickers[0]}_{start}_{end}.csv".replace(":", "-")
             file_path = os.path.join(save_dir, filename)
             data.to_csv(file_path)
@@ -164,21 +163,56 @@ def safe_download(tickers, start, end, retries=3, delay=1):
     raise Exception(f"Failed to fetch data for {tickers} after {retries} retries.")
 
 
-@app.post("/run-backtest")
-@limiter.limit("5/minute")
-def run_backtest(request: Request,config: BacktestConfig):
-    try:
-        print(config)
-        start_year = pd.to_datetime(config.start_date).year
-        end_year = pd.to_datetime(config.end_date).year
-        # Step 1: Fetch fundamentals based on user filters
+def ranking_logic(fundamentals_df, config):
+    ranking_criteria = [r.strip() for r in config.ranking.split(',') if ':' in r]
+    rankings = []
+
+    for metric_order in ranking_criteria:
+        metric, order = metric_order.split(':')
+        ascending = True if order == 'asc' else False
+        fundamentals_df[f'rank_{metric}'] = fundamentals_df[metric].rank(ascending=ascending)
+        rankings.append(fundamentals_df[f'rank_{metric}'])
+
+    if config.compranking == 'yes' and len(rankings) > 1:
+        fundamentals_df['composite_rank'] = sum(rankings) / len(rankings)
+    else:
+        fundamentals_df['composite_rank'] = rankings[0]  # Use only first metric
+
+    print("composite done")
+    top_ranked_df = fundamentals_df.sort_values('composite_rank').head(config.portfolio_size)
+    ranked_tickers = top_ranked_df['ticker'].tolist()
+
+    return top_ranked_df, ranked_tickers
+
+    
+def fetch_rebalance_dates(start,end,config):
+    start = pd.to_datetime(config.start_date)
+    end = pd.to_datetime(config.end_date)
+    rebalance_freq = {
+        "monthly": relativedelta(months=1),
+        "quarterly": relativedelta(months=3),
+        "yearly": relativedelta(years=1),
+    }.get(config.rebalance_frequency, relativedelta(months=1))
+
+    rebalance_dates = []
+    current = start
+    while current < end:
+        rebalance_dates.append(current)
+        current += rebalance_freq
+    rebalance_dates.append(end)
+
+    return rebalance_dates
+
+
+def fetch_fundamentals(year_cutoff,config):
+    # Step 1: Fetch fundamentals based on user filters
         # Step 2: Subquery to get latest year for each company before or equal to start_year
         latest_fundamentals_subq = (
             select(
                 fundamentals.c.company_id,
                 func.max(fundamentals.c.year).label("max_year")
             )
-            .where(fundamentals.c.year <= start_year)
+            .where(fundamentals.c.year <= year_cutoff)
             .group_by(fundamentals.c.company_id)
             .alias("latest_f")
         )
@@ -221,57 +255,91 @@ def run_backtest(request: Request,config: BacktestConfig):
             raise Exception("No companies match the filter criteria.")
 
         print("Fetch Fundamentals")
-        # Step 2: Rank based on provided criteria
-        ranking_criteria = [r.strip() for r in config.ranking.split(',') if ':' in r]
-        rankings = []
+        return fundamentals_df
 
-        print(ranking_criteria)
+def allocate_weights(top_ranked_df,tickers_this_period, config):
+    
+    if config.position_sizing == 'equal':
+        weights = {ticker: 1 / len(ticker) for ticker in tickers_this_period}
+    elif config.position_sizing == 'market_cap':
+        caps = top_ranked_df.set_index('ticker').loc[tickers_this_period, 'market_cap']
+        total = caps.sum()
+        weights = {ticker: caps[ticker] / total for ticker in tickers_this_period}
+    elif config.position_sizing in ['roce', 'roe']:
+        vals = top_ranked_df.set_index('ticker').loc[tickers_this_period, config.position_sizing]
+        total = vals.sum()
+        weights = {ticker: vals[ticker] / total for ticker in tickers_this_period}
+    else:
+        weights = {ticker: 1 / len(ticker) for ticker in tickers_this_period}
 
-        for metric_order in ranking_criteria:
-            metric, order = metric_order.split(':')
-            ascending = True if order == 'asc' else False
-            fundamentals_df[f'rank_{metric}'] = fundamentals_df[metric].rank(ascending=ascending)
-            rankings.append(fundamentals_df[f'rank_{metric}'])
+    return weights
 
-        print("ranking:", rankings)
-        if config.compranking == 'yes' and len(rankings) > 1:
-            fundamentals_df['composite_rank'] = sum(rankings) / len(rankings)
-        else:
-            fundamentals_df['composite_rank'] = rankings[0]  # Use only first metric
+def exportconfig(run_id,config): 
 
-        print("composote done")
-        top_ranked_df = fundamentals_df.sort_values('composite_rank').head(config.portfolio_size)
-        ranked_tickers = top_ranked_df['ticker'].tolist()
+    config_df = pd.DataFrame([{
+    "run_id": run_id,
+    "start_date": config.start_date,
+    "end_date": config.end_date,
+    "rebalance_frequency": config.rebalance_frequency,
+    "portfolio_size": config.portfolio_size,
+    "ranking": config.ranking,
+    "compranking": config.compranking,
+    "position_sizing": config.position_sizing,
+    "initial_capital": config.initial_capital,
+    "roce": config.roce,
+    "pat": config.pat,
+    "market_cap_min": config.market_cap_min,
+    "market_cap_max": config.market_cap_max,
+    "run_date": datetime.now()
+    }])
+    config_df.to_csv(f"data/exports/{run_id}_config.csv", index=False)
 
-        # Step 3: Download price data
-        start = pd.to_datetime(config.start_date)
-        end = pd.to_datetime(config.end_date)
-        rebalance_freq = {
-            "monthly": relativedelta(months=1),
-            "quarterly": relativedelta(months=3),
-            "yearly": relativedelta(years=1),
-        }.get(config.rebalance_frequency, relativedelta(months=1))
 
-        rebalance_dates = []
-        current = start
-        while current < end:
-            rebalance_dates.append(current)
-            current += rebalance_freq
-        rebalance_dates.append(end)
-
-        print("Rebalance dates", rebalance_dates)
-        # Step 4: Portfolio allocation
-        # Step 4: Backtest
+@app.post("/run-backtest")
+@limiter.limit("5/minute")
+def run_backtest(request: Request,config: BacktestConfig):
+    try:
+        run_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") 
+        exportconfig(run_id,config)
+        start_year = pd.to_datetime(config.start_date).year
+        end_year = pd.to_datetime(config.end_date).year
+        rebalance_dates = fetch_rebalance_dates(start_year,end_year,config)
+        print("-" * 50)
+        print("Rebalance dates:", rebalance_dates)
+        print("No of rebalances:", len(rebalance_dates))
+        
         portfolio_history = []
+        portfolio_composition_records=[]
+        top_ranked_records=[]
         capital = config.initial_capital
 
         for i in range(len(rebalance_dates) - 1):
+            print("Rebalance No:", i)
+            year_cutoff = rebalance_dates[i].year
             period_start = rebalance_dates[i].strftime('%Y-%m-%d')
             period_end = rebalance_dates[i + 1].strftime('%Y-%m-%d')
 
+            fundamentals_df = fetch_fundamentals(year_cutoff, config)
+            top_ranked_df,tickers = ranking_logic(fundamentals_df, config)
+
+            for _, row in top_ranked_df.iterrows():
+                top_ranked_records.append({
+                    "run_id": run_id,
+                    "date": period_start,
+                    "ticker": row["ticker"],
+                    "composite_rank": row["composite_rank"],
+                    "roce": row["roce"],
+                    "roe": row["roe"],
+                    "market_cap": row["market_cap"]
+                })
+
+            print(f"Period: {period_start} to {period_end}")
+            print(f"Fundamentals columns: {len(fundamentals_df)}")
+            print(f"Top-ranked tickers: {tickers}")
+            
+
             try:
-                print("Type of tickers",ranked_tickers)
-                price_data = safe_download(ranked_tickers, period_start, period_end)
+                price_data = safe_download(tickers, period_start, period_end)
 
             except Exception:
                 continue
@@ -284,22 +352,10 @@ def run_backtest(request: Request,config: BacktestConfig):
             if price_data.empty:
                 continue
 
-            # Rebuild weights for current rebalance
-            tickers_this_period = price_data.columns.tolist()
-            n = len(tickers_this_period)
+            print(f"Price data after dropna columns: {price_data.columns.tolist()}")
+            print(f"Price data is empty? {price_data.empty}")
 
-            if config.position_sizing == 'equal':
-                weights = {ticker: 1 / n for ticker in tickers_this_period}
-            elif config.position_sizing == 'market_cap':
-                caps = top_ranked_df.set_index('ticker').loc[tickers_this_period, 'market_cap']
-                total = caps.sum()
-                weights = {ticker: caps[ticker] / total for ticker in tickers_this_period}
-            elif config.position_sizing in ['roce', 'roe']:
-                vals = top_ranked_df.set_index('ticker').loc[tickers_this_period, config.position_sizing]
-                total = vals.sum()
-                weights = {ticker: vals[ticker] / total for ticker in tickers_this_period}
-            else:
-                weights = {ticker: 1 / n for ticker in tickers_this_period}
+            weights=allocate_weights(top_ranked_df,price_data.columns.tolist(), config)
 
             # Get start and end prices
             try:
@@ -309,14 +365,41 @@ def run_backtest(request: Request,config: BacktestConfig):
                 continue
 
             # Calculate number of shares per ticker
-            shares = {ticker: (capital * weights[ticker]) / start_prices[ticker] for ticker in tickers_this_period}
-            end_value = sum(shares[ticker] * end_prices[ticker] for ticker in tickers_this_period)
+            shares = {
+                    ticker: (capital * weights[ticker]) / start_prices[ticker]
+                    if start_prices[ticker] != 0 else 0
+                    for ticker in weights
+                }
+            end_value = sum(shares[ticker] * end_prices[ticker] for ticker in weights)
 
+            
+            tickers_this_period = price_data.columns.tolist()
+            for ticker in tickers_this_period:
+                portfolio_composition_records.append({
+                    "run_id": run_id,
+                    "date": period_start,
+                    "ticker": ticker,
+                    "weight": weights[ticker],
+                    "shares": shares[ticker],
+                    "start_price": start_prices[ticker],
+                    "end_price": end_prices[ticker],
+                    "value": shares[ticker] * end_prices[ticker]
+                })
+
+            
+
+            print("Capital Values")
             capital = end_value
             portfolio_history.append({
                 "date": price_data.index[-1].strftime('%Y-%m-%d'),
                 "value": round(end_value, 2)
             })
+
+        portfoliocsv_df = pd.DataFrame(portfolio_composition_records)
+        portfoliocsv_df.to_csv(f"data/exports/{run_id}_portfolio_composition.csv", index=False)
+
+        top_companies_df = pd.DataFrame(top_ranked_records)
+        top_companies_df.to_csv(f"data/exports/{run_id}_top_companies.csv", index=False)
 
         # Step 6: Metrics
         portfolio_df = pd.DataFrame(portfolio_history)
@@ -325,20 +408,40 @@ def run_backtest(request: Request,config: BacktestConfig):
 
 
         return {
+            "run_id": run_id,
             "equity_curve": portfolio_df[["date", "value"]].to_dict(orient="records"),
             "drawdown_curve": portfolio_df[["date", "drawdown"]].round(4).to_dict(orient="records"),
             "metrics": metrics
         }
 
-
     except Exception as e:
+        print(e)
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/export-backtest")
-def export_backtest():
-    df = pd.read_sql("SELECT * FROM backtest_results", con=engine)
-    csv = df.to_csv(index=False)
-    return Response(content=csv, media_type="text/csv", headers={
-        "Content-Disposition": "attachment; filename=backtest.csv"
-    })
+def export_backtest(run_id: str):
+    try:
+        print("run id", run_id)
+        folder = "data/exports"
+        files = [
+            f"{folder}/{run_id}_portfolio_composition.csv",
+            f"{folder}/{run_id}_top_companies.csv",
+            f"{folder}/{run_id}_config.csv"
+        ]
+
+        # Create an in-memory ZIP file
+        zip_buffer = BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
+            for filepath in files:
+                filename = os.path.basename(filepath)
+                zipf.write(filepath, arcname=filename)
+        zip_buffer.seek(0)
+
+        return StreamingResponse(
+            zip_buffer,
+            media_type="application/x-zip-compressed",
+            headers={"Content-Disposition": f"attachment; filename={run_id}_backtest_export.zip"}
+        )
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=500, detail=str(e))

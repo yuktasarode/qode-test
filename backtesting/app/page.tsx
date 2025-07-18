@@ -25,6 +25,7 @@ ChartJS.register(
 );
 
 type BacktestResult = {
+  run_id:string;
   equity_curve: { date: string; value: number }[];
   drawdown_curve: { date: string; drawdown: number }[];
   metrics: {
@@ -38,6 +39,8 @@ type BacktestResult = {
 export default function Home() {
   const [pingResponse, setPingResponse] = useState("");
   const [echoResponse, setEchoResponse] = useState("");
+  const [runId, setRunId] = useState<string | null>(null);
+
 
   const handlePing = async () => {
   try {
@@ -100,6 +103,7 @@ export default function Home() {
       console.log(config)
       const response = await axios.post('http://localhost:8000/run-backtest', config);
       setResult(response.data);
+      setRunId(response.data.run_id);
       console.log(response.data)
     } catch (err) {
       console.error(err);
@@ -109,24 +113,31 @@ export default function Home() {
   };
 
   const handleExport = async () => {
-    try {
-      const response = await axios.get('http://localhost:8000/export-backtest', {
-        responseType: 'blob',
-      });
 
-      const blob = new Blob([response.data], { type: 'text/csv' });
+    if (!runId) {
+    alert("Please run the backtest first.");
+    return;
+  }
+
+    try {
+      const response = await axios.get(`http://localhost:8000/export-backtest`, {
+      params: { run_id: runId }, // send run_id as query param
+      responseType: 'blob',
+    });
+
+      const blob = new Blob([response.data], { type: 'application/zip' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'backtest_results.csv';
+      a.download = `${runId}_backtest_export.zip`;
       document.body.appendChild(a);
       a.click();
       a.remove();
     } catch (err) {
       console.error(err);
       alert("Error exporting results");
-    }
-  };
+      }
+    };
 
 
   // Real Code
