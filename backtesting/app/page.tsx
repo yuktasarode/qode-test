@@ -112,6 +112,10 @@ export default function Home() {
     setLoading(false);
   };
 
+  const handleNifty=async()=>{
+
+  }
+
   const handleExport = async () => {
 
     if (!runId) {
@@ -145,88 +149,71 @@ export default function Home() {
 
 
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
+    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen pt-4 pb-20 px-8 sm:pt-10 sm:px-20">
       <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <button
-          onClick={handlePing}
-          className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
-        >
-          Test /ping
-        </button>
-        <p className="text-sm text-white-800">{pingResponse}</p>
+        
+          <h1 className="text-2xl font-bold mb-4 mx-auto">Equity Backtesting Platform</h1>
 
-        <button
-          onClick={handleEcho}
-          className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600"
-        >
-          Test /echo
-        </button>
-        <p className="text-sm text-white-800">{echoResponse}</p>
-
-        {/* Real code */}
-
-        <div>
-          <div className="p-8 max-w-4xl mx-auto">
-          <h1 className="text-2xl font-bold mb-4">Equity Backtesting Platform</h1>
-
-          
           <form onSubmit={handleSubmit} className="space-y-4">
-            <h1> Set Parameters</h1>
-            <div className="grid grid-cols-2 gap-4">
-              <p>Initial Capital</p>
-              <input type="text" name="initial_capital" placeholder="Initial investment" value={config.initial_capital} onChange={handleChange} className="border p-2" />
-              <p>Start Date</p>
-              <input type="date" name="start_date" value={config.start_date} onChange={handleChange} className="border p-2" />
-              <p>End Date</p>
-              <input type="date" name="end_date" value={config.end_date} onChange={handleChange} className="border p-2" />
-              <p>Rebalance Frequencey</p>
-              <select name="rebalance_frequency" value={config.rebalance_frequency} onChange={handleChange} className="border p-2 bg-gray-800">
-                <option value="monthly">Monthly</option>
-                <option value="quarterly">Quarterly</option>
-                <option value="yearly">Yearly</option>
-              </select>
-              <p>Portfolio Size</p>
-              <input type="text" name="portfolio_size" placeholder="Portfolio Size" value={config.portfolio_size} onChange={handleChange} className="border p-2" />
-              
-              <p>Position Sizing</p>
-              <select name="position_sizing" value={config.position_sizing} onChange={handleChange} className="border p-2 bg-gray-800">
-                <option value="equal">Equal-weighted</option>
-                <option value="market_cap">Market Cap-weighted</option>
-                <option value="roce">ROCE-weighted</option>
-              </select>
 
-             <h2>--</h2>
-             <h2>--</h2>
+            <div className="flex flex-col sm:flex-row gap-4 w-full">
 
-              <h2>Filtering System</h2>
-             
+              <div className="w-full border border-white rounded-lg bg-gray-800 p-4 text-white">
+                <p className="text-base mb-8 font-semibold text-center">Parameters</p>
+                <div className="grid grid-cols-2 gap-4">
+                <p>Initial Capital</p>
+                <input type="text" name="initial_capital" placeholder="Initial investment" value={config.initial_capital} onChange={handleChange} className="border p-2" />
+                <p>Start Date</p>
+                <input type="date" name="start_date" value={config.start_date} onChange={handleChange} className="border p-2" />
+                <p>End Date</p>
+                <input type="date" name="end_date" value={config.end_date} onChange={handleChange} className="border p-2" />
+                <p>Rebalance Frequencey</p>
+                <select name="rebalance_frequency" value={config.rebalance_frequency} onChange={handleChange} className="border p-2 bg-gray-800">
+                  <option value="monthly">Monthly</option>
+                  <option value="quarterly">Quarterly</option>
+                  <option value="yearly">Yearly</option>
+                </select>
+                <p>Portfolio Size</p>
+                <input type="text" name="portfolio_size" placeholder="Portfolio Size" value={config.portfolio_size} onChange={handleChange} className="border p-2" />
+                <p>Position Sizing</p>
+                <select name="position_sizing" value={config.position_sizing} onChange={handleChange} className="border p-2 bg-gray-800">
+                  <option value="equal">Equal-weighted</option>
+                  <option value="market_cap">Market Cap-weighted</option>
+                  <option value="roce">ROCE-weighted</option>
+                </select>
+                </div>
+              </div>
 
-              <p>Market Cap Range</p>
-              <input type="text" name="market_cap_min" placeholder="Market Cap Min" value={config.market_cap_min} onChange={handleChange} className="border p-2" />
-              <input type="text" name="market_cap_max" placeholder="Market Cap Max" value={config.market_cap_max} onChange={handleChange} className="border p-2" />
-              
-              <p>ROCE</p>
-              <input type="text" name="roce" placeholder="ROCE > X%" value={config.roce} onChange={handleChange} className="border p-2" />
-              
-              <p>PAT</p>
-              <input type="text" name="pat" placeholder="PAT > X" value={config.pat} onChange={handleChange} className="border p-2" />
+              <div className="w-full border border-white rounded-lg bg-gray-800 p-4 text-white">
+                <p className="text-base mb-8 font-semibold text-center">Filters</p>
+                <div className="grid grid-cols-2 gap-4">
+                <p>Market Cap Range</p>
+                <p></p>
+                <p>Min</p><input type="text" name="market_cap_min" placeholder="Market Cap Min" value={config.market_cap_min} onChange={handleChange} className="border p-2" />
+                <p>Max</p><input type="text" name="market_cap_max" placeholder="Market Cap Max" value={config.market_cap_max} onChange={handleChange} className="border p-2" />
+                <p>ROCE</p><input type="text" name="roce" placeholder="ROCE > X%" value={config.roce} onChange={handleChange} className="border p-2" />
+                <p>PAT</p><input type="text" name="pat" placeholder="PAT > X" value={config.pat} onChange={handleChange} className="border p-2" />
+                </div>
+              </div>
 
-              <h2>--</h2>
-              <h2>--</h2>
+              <div className="w-full border border-white rounded-lg bg-gray-800 p-4 text-white">
+                <p className="text-base mb-8 font-semibold text-center">Ranking</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <p>Criteria</p>
+                  <select name="ranking" value={config.ranking} onChange={handleChange} className="border p-2 bg-gray-800">
+                    <option value="roe:desc">Roe desc</option>
+                    <option value="roe:asc">Roe asc</option>
+                    <option value="pe:desc">pe desc</option>
+                    <option value="pe:asc">pe asc</option>
+                  </select>
+                  <p>Composite ranking</p>
+                  <select name="compranking" value={config.compranking} onChange={handleChange} className="border p-2 bg-gray-800">
+                    <option value="yes">yes</option>
+                    <option value="no">no</option>
+                  </select>
+                </div>
+              </div>
 
-              <h2>Ranking System</h2>
-              <select name="ranking" value={config.ranking} onChange={handleChange} className="border p-2 bg-gray-800">
-                <option value="roe:desc">Roe desc</option>
-                <option value="roe:asc">Roe asc</option>
-                <option value="pe:desc">pe desc</option>
-                <option value="pe:asc">pe asc</option>
-              </select>
-
-              <p>Use composite ranking</p>
-              <select name="compranking" value={config.compranking} onChange={handleChange} className="border p-2 bg-gray-800">
-                <option value="yes">yes</option>
-                <option value="no">no</option>
-              </select>
             </div>
 
             <div className="flex gap-4">
@@ -234,43 +221,65 @@ export default function Home() {
                 {loading ? 'Running...' : 'Run Backtest'}
               </button>
               {result && (
+                <div className="flex gap-4">
                 <button type="button" onClick={handleExport} className="bg-green-600 text-white px-4 py-2 rounded">
                   Export CSV
                 </button>
+
+                <button type="button" onClick={handleNifty} className="bg-green-600 text-white px-4 py-2 rounded">
+                  Compare Nifty50
+                </button>
+                </div>
               )}
             </div>
           </form>
 
           {result && (
-            <div className="mt-8">
-              <h2 className="text-xl font-semibold mb-2">Equity Curve</h2>
-              <Line
-                data={{
-                  labels: result.equity_curve.map(d => d.date),
-                  datasets: [
-                    {
-                      label: 'Portfolio Value',
-                      data: result.equity_curve.map(d => d.value),
-                      borderColor: 'rgb(75, 192, 192)',
-                      tension: 0.1
-                    }
-                  ]
-                }}
-              />
-              <h2 className="text-xl font-semibold mt-8 mb-2">Drawdown Curve</h2>
-              <Line
-                data={{
-                  labels: result.drawdown_curve.map(d => d.date),
-                  datasets: [
-                    {
-                      label: 'Drawdown',
-                      data: result.drawdown_curve.map(d => d.drawdown),
-                      borderColor: 'rgb(255, 99, 132)',
-                      tension: 0.1
-                    }
-                  ]
-                }}
-              />
+            <div className="mt-8 w-full">
+              <div className="flex flex-col sm:flex-row gap-8">
+                <div className="flex-1">
+                  <h2 className="text-xl font-semibold mb-2">Equity Curve</h2>
+                  <div className="w-full h-[400px]">
+                  <Line
+                    data={{
+                      labels: result.equity_curve.map(d => d.date),
+                      datasets: [
+                        {
+                          label: 'Portfolio Value',
+                          data: result.equity_curve.map(d => d.value),
+                          borderColor: 'rgb(75, 192, 192)',
+                          tension: 0.1
+                        }
+                      ]
+                    }}
+                    options={{ maintainAspectRatio: false, responsive: true }}
+                  />
+                  </div>
+                </div>
+
+                <div className="flex-1">
+                  <h2 className="text-xl font-semibold mt-8 mb-2">Drawdown Curve</h2>
+                  <div className="w-full h-[400px]">
+                  <Line
+                    data={{
+                      labels: result.drawdown_curve.map(d => d.date),
+                      datasets: [
+                        {
+                          label: 'Drawdown',
+                          data: result.drawdown_curve.map(d => d.drawdown),
+                          borderColor: 'rgb(255, 99, 132)',
+                          tension: 0.1
+                        }
+                      ]
+                    }}
+                    options={{ maintainAspectRatio: false, responsive: true }}
+                  />
+                  </div>
+                </div>
+
+              </div>
+
+
               <div className="mt-4">
                 <p><strong>CAGR:</strong> {result.metrics.cagr}%</p>
                 <p><strong>Sharpe:</strong> {result.metrics.sharpe}</p>
@@ -278,9 +287,7 @@ export default function Home() {
               </div>
             </div>
           )}
-        </div>
-
-        </div>
+       
         
       </main>
     </div>
