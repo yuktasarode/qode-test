@@ -118,37 +118,11 @@ async def echo(data: EchoData):
     return {"received": data.dict()}
 
 
-
-def convert_dates_to_period(start: str, end: str) -> str:
-    valid_periods = [
-        ("1d", 1),
-        ("5d", 5),
-        ("1mo", 30),
-        ("3mo", 90),
-        ("6mo", 180),
-        ("1y", 365),
-        ("2y", 730),
-        ("5y", 1825),
-        ("10y", 3650),
-    ]
-
-    date_format = "%Y-%m-%d"
-    start_date = datetime.strptime(start, date_format)
-    end_date = datetime.strptime(end, date_format)
-    delta_days = (end_date - start_date).days
-
-    for period, days in valid_periods:
-        if delta_days <= days:
-            return period
-    return "max"  # fallback
-
-
 def safe_download(tickers, start, end, retries=3, delay=1):
     for attempt in range(retries):
         try:
             print("Fetching from Yahoo")
             
-            period = convert_dates_to_period(start, end)
             data = yf.download(tickers=tickers, start=start, end=end)["Close"]
             filename = f"prices_{tickers[0]}_{start}_{end}.csv".replace(":", "-")
             file_path = os.path.join(save_dir, filename)
@@ -311,6 +285,7 @@ def run_backtest(request: Request,config: BacktestConfig):
         portfolio_history = []
         portfolio_composition_records=[]
         top_ranked_records=[]
+        winners_and_losers = []
         capital = config.initial_capital
 
         for i in range(len(rebalance_dates) - 1):
@@ -372,6 +347,22 @@ def run_backtest(request: Request,config: BacktestConfig):
                 }
             end_value = sum(shares[ticker] * end_prices[ticker] for ticker in weights)
 
+            returns_this_period = {
+                ticker: ((end_prices[ticker] - start_prices[ticker]) / start_prices[ticker]) * 100
+                if start_prices[ticker] != 0 else 0
+                for ticker in weights
+            }
+
+            period_winners = sorted(returns_this_period.items(), key=lambda x: x[1], reverse=True)
+            top_winner = period_winners[0]
+            top_loser = period_winners[-1]
+
+            winners_and_losers.append({
+                "date": period_start,
+                "top_winner": {"ticker": top_winner[0], "return": round(top_winner[1], 2)},
+                "top_loser": {"ticker": top_loser[0], "return": round(top_loser[1], 2)},
+            })
+
             
             tickers_this_period = price_data.columns.tolist()
             for ticker in tickers_this_period:
@@ -383,7 +374,8 @@ def run_backtest(request: Request,config: BacktestConfig):
                     "shares": shares[ticker],
                     "start_price": start_prices[ticker],
                     "end_price": end_prices[ticker],
-                    "value": shares[ticker] * end_prices[ticker]
+                    "value": shares[ticker] * end_prices[ticker],
+                    "return_pct": ((end_prices[ticker] - start_prices[ticker]) / start_prices[ticker]) * 100 if start_prices[ticker] != 0 else 0
                 })
 
             
@@ -401,6 +393,18 @@ def run_backtest(request: Request,config: BacktestConfig):
         top_companies_df = pd.DataFrame(top_ranked_records)
         top_companies_df.to_csv(f"data/exports/{run_id}_top_companies.csv", index=False)
 
+        top_movers_df = pd.DataFrame([
+            {
+                "date": entry["date"],
+                "top_winner": entry["top_winner"]["ticker"],
+                "top_winner_return": entry["top_winner"]["return"],
+                "top_loser": entry["top_loser"]["ticker"],
+                "top_loser_return": entry["top_loser"]["return"],
+            }
+            for entry in winners_and_losers
+        ])
+        top_movers_df.to_csv(f"data/exports/{run_id}_top_movers.csv", index=False)
+
         # Step 6: Metrics
         portfolio_df = pd.DataFrame(portfolio_history)
         metrics = calculate_metrics(portfolio_df)
@@ -411,7 +415,8 @@ def run_backtest(request: Request,config: BacktestConfig):
             "run_id": run_id,
             "equity_curve": portfolio_df[["date", "value"]].to_dict(orient="records"),
             "drawdown_curve": portfolio_df[["date", "drawdown"]].round(4).to_dict(orient="records"),
-            "metrics": metrics
+            "metrics": metrics,
+            "top_movers": winners_and_losers
         }
 
     except Exception as e:
@@ -426,7 +431,8 @@ def export_backtest(run_id: str):
         files = [
             f"{folder}/{run_id}_portfolio_composition.csv",
             f"{folder}/{run_id}_top_companies.csv",
-            f"{folder}/{run_id}_config.csv"
+            f"{folder}/{run_id}_config.csv",
+            f"{folder}/{run_id}_top_movers.csv"
         ]
 
         # Create an in-memory ZIP file
