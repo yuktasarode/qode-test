@@ -19,7 +19,7 @@ npm run dev
 This runs the frontend on http://localhost:3000
 
 ### 3. Setup Database
-- setup local postgres server
+- setup local postgres server or setup using docker `docker run --name containername -p 5432:5432 -e POSTGRES_PASSWORD=password -d postgres`
 - create a .env file to add database url (DB_URL).
 
 
