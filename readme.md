@@ -132,7 +132,7 @@ Each rebalance period is handled independently using the most recent available d
 
 ## Tech Stack
 - **Frontend**: React, Tailwind CSS, Chart.js
-- **Backend**: FastAPI, Pandas, SQLAlchemy, yFinance
+- **Backend**: FastAPI, Pandas, SQLAlchemy
 - **Database**: PostgreSQL (schema: companies, fundamentals, prices)
 - **Data Scraping** : Screener.in, yfinance 
 
